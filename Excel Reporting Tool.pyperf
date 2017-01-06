@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<ProfilingTarget xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <ProjectTarget>
+    <TargetProject>c411072c-d72b-46e3-aa13-e5ef89eadd66</TargetProject>
+    <FriendlyName>Excel Reporting Tool</FriendlyName>
+  </ProjectTarget>
+</ProfilingTarget>

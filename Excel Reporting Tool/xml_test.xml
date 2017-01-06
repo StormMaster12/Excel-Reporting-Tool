@@ -1,0 +1,10 @@
+<ROOT>
+<txt>This is a test</txt>
+<SQL>SELECT Payee Account=PA,Transaction Date=TD,Category=CT
+SUM Amount
+FROM Transactions
+WHERE PA=WAGN Railways
+WHERE TD=01/01/2015-01/01/2016
+WHERE CT=Working</SQL>
+</ROOT>
+
