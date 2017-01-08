@@ -3,6 +3,7 @@ import xml
 import itertools
 from datetime import date, datetime
 from dateutil.parser import parse
+import re
 
 class Report_Generator():
 
@@ -25,14 +26,12 @@ class Report_Generator():
         report = """<html>
         <head></head>"""
 
-
         for node in xml_iter:
-            print(node.tag)
             if node.tag=="txt":
                 report += "\n" + "<body><p>" + node.text + "</p></body>"
         
             elif node.tag=="SQL":
-                report +="\n" + "<body><p>" + str(self.parse_SQL(node.text)) + "</p></body>"
+                report +="\n" + "<body>" + self.parse_SQL(node.text) + "</body>"
 
 
         report += "</html>"
@@ -41,43 +40,75 @@ class Report_Generator():
 
     def parse_SQL(self,SQL):
 
-        SQL_Command_List = []
-        SQL_Columns = []
-        SQL_Where = []
-        column_indices = []
+        SQL_Operators = ['SELECT','FROM','WHERE','AND','SUM','AVG','COUNT','MAX','MIN']
+        SQL_Maths_Operators = ['SUM','AVG','COUNT','MAX','MIN']
+        SQL_Command_Pos = []
+        
+        SQL_Command_Dict = {}
 
         SQL_Sheet = ""
         SQL_Sum = ""
         SQL_Sum_index =1
-        Output_Sum = 0
+        Output_String = ""
 
-        #Splits the text that comes in into understandable instructions
-        #First splits the text from the xml file into lines.
-        #Then splits the text up determined by "," Creates a new list which contains, eg [['Select][Account=AT,Transaction=TR]]
-        #Then finds a command word. eg SELECT, Will the go one down in the list and then perform actions as required on the data.
-        #For SELECT it will split the string at the =. Then add the two halves to a list for further use.
+        SQL_No_Line = SQL.replace("\n"," ").replace('\r',' ') + " "
 
-        SQL_List = str.splitlines(SQL)
+        for string in SQL_Operators:
+            for m in re.finditer(string, SQL_No_Line):
+                SQL_Command_Pos.append([m.start(),m.end(),string])
 
-        for z in SQL_List:
-            space_list= z.split(None,1)
-            for i in space_list:
-                comma_list = i.split(",")
-                SQL_Command_List.append(comma_list)
+        SQL_Command_Pos.sort()
 
-        for i in range (0,len(SQL_Command_List)):
-            if SQL_Command_List[i][0] == 'SELECT':
-                for string in SQL_Command_List[i+1]:
-                    split_string = string.split("=",1)
-                    SQL_Columns.append([split_string[0],split_string[1]])
-            elif SQL_Command_List[i][0] == "FROM":
-                SQL_Sheet = SQL_Command_List[i+1]
-            elif SQL_Command_List[i][0] == "WHERE":
-                for string in SQL_Command_List[i+1]:
-                    split_string = string.split("=",1)
-                    SQL_Where.append([split_string[0],split_string[1]])
-            elif SQL_Command_List[i][0] == "SUM":
-                SQL_Sum = SQL_Command_List[i+1]
+        for i in range(0,len(SQL_Command_Pos)): SQL_Command_Dict[SQL_Command_Pos[i][2]] = []
+
+        print(SQL_Command_Pos)
+
+        for i in range(0,len(SQL_Command_Pos)):
+            
+            pm=''
+            count=0
+            
+            for m in re.finditer(' ', SQL_No_Line):
+
+                if i < (len(SQL_Command_Pos)-1):
+                    if m.start() >= SQL_Command_Pos[i][1] and m.end()<=SQL_Command_Pos[i+1][0]:
+
+                        chunk_string = " ".join(self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]).split())
+
+                        if chunk_string != SQL_Command_Pos[i][2]:
+                            SQL_Command_Dict[SQL_Command_Pos[i][2]].append(self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]))
+
+                elif i == (len(SQL_Command_Pos)-1):
+                    if m.start()>= SQL_Command_Pos[i][1]:
+
+                        chunk_string = " ".join( self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]).split())
+
+                        if chunk_string != SQL_Command_Pos[i][2]:
+                            SQL_Command_Dict[SQL_Command_Pos[i][2]].append(self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]))
+                    count = 0
+                pm=m
+                count +=1
+                    
+        print(SQL_Command_Dict)
+
+        SQL_Select = []
+        SQL_Math = []
+        SQL_Where = []
+
+        for i in range(1,len(SQL_Command_Dict['SELECT'])):
+            if "," in SQL_Command_Dict['SELECT'][i] or i == len(SQL_Command_Dict['SELECT'])-1:
+                SQL_Select.append([SQL_Command_Dict['SELECT'][i-1].replace("_"," "), SQL_Command_Dict['SELECT'][i].strip(",")])
+               
+        for i in range(0,len(SQL_Maths_Operators)):
+            for j in  range(0,len(SQL_Command_Dict[SQL_Maths_Operators[i]])):
+                SQL_Math.append(SQL_Maths_Operators[i],SQL_Command_Dict[SQL_Maths_Operators[i][j].strip('()')])
+                              
+                
+        SQL_Command_Dict['SELECT'] = SQL_Select
+        SQL_Command_Dict['Maths'] = SQL_Math
+
+        del SQL_Math
+        del SQL_Select
 
         active_worksheet = self.excel_workbook['Transactions']
 
@@ -94,9 +125,18 @@ class Report_Generator():
         
         print(column_indices)
 
+        Output_String = self.SQL_Logic(active_worksheet,SQL_Where,column_indices,SQL_Sum_index,SQL_Columns)
 
+        return Output_String
+
+    def SQL_Logic(self,active_worksheet,SQL_Where,column_indices,SQL_Sum_Index,SQL_Columns):
+        
+        Output_Sum = 0
+        Output_String = ""
+        Output_List = []
         #Logic Bit of the code
         #First loop goes through all of the rows in the spreadsheet
+
         for i in range(12792,active_worksheet.max_row):
             count = 0
             #This goes through the commands given by the SQL
@@ -125,12 +165,41 @@ class Report_Generator():
 
             #If all the checks have passed, the counter will equal the total number of clauses given. Will then add data from the column specified by SQL_Sun_Index
             if count == len(SQL_Where):
-                Output_Sum += active_worksheet.cell(row=i,column=SQL_Sum_index).value
-                                    
-        return Output_Sum
+               
+                flat_list = []
+
+                for j in range(0,len(column_indices)):
+                    sheet_value = active_worksheet.cell(row=i,column=column_indices[j][0]).value
+                    if type(sheet_value) is datetime:
+                        flat_list.append(datetime.strftime(sheet_value,'%d-%m-%Y'))
+                    else:
+                        flat_list.append(sheet_value)
+
+                Output_Sum += active_worksheet.cell(row=i,column=SQL_Sum_Index).value
+                flat_list.append('£'+ str(active_worksheet.cell(row=i,column=SQL_Sum_Index).value))
+
+                Output_List.append(flat_list)
+
+
+        Output_String = ''.join(self.list_to_HTML_Table(Output_List)) + '\n <p> Total Cost : ' + str(Output_Sum) + '</p>'
+        return Output_String
+
+    def list_to_HTML_Table(self,list):
+        yield '<table>'
+        for sublist in list:
+            yield '<tr><td>'
+            yield '</td><td>'.join(sublist)
+            yield '</td></tr>'
+        yield '</table>'
 
     def to_date(self,str_to_date):
         return datetime.strptime(str_to_date, '%d/%m/%Y').date()
+
+    def get_string(self,string,count,m,pm,SQL_Command_Pos):
+        if count == 0:
+            return (string[SQL_Command_Pos:m.start()])
+        else:
+            return (string[pm.end():m.start()])
 
     def split_date(self,test):
         try:

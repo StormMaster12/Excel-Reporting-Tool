@@ -4,4 +4,9 @@
     <TargetProject>c411072c-d72b-46e3-aa13-e5ef89eadd66</TargetProject>
     <FriendlyName>Excel Reporting Tool</FriendlyName>
   </ProjectTarget>
+  <Reports>
+    <Report>
+      <Filename>C:\Users\James\AppData\Local\Temp\Excel Reporting Tool_20170106.vsp</Filename>
+    </Report>
+  </Reports>
 </ProfilingTarget>
