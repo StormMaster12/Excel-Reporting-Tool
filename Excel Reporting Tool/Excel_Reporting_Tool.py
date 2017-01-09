@@ -49,87 +49,83 @@ class Report_Generator():
         SQL_Sheet = ""
         SQL_Sum = ""
         SQL_Sum_index =1
-        Output_String = ""
 
         SQL_No_Line = SQL.replace("\n"," ").replace('\r',' ') + " "
 
         for string in SQL_Operators:
             for m in re.finditer(string, SQL_No_Line):
                 SQL_Command_Pos.append([m.start(),m.end(),string])
-
         SQL_Command_Pos.sort()
 
         for i in range(0,len(SQL_Command_Pos)): SQL_Command_Dict[SQL_Command_Pos[i][2]] = []
 
-        print(SQL_Command_Pos)
-
         for i in range(0,len(SQL_Command_Pos)):
-            
             pm=''
-            count=0
-            
+            count=0         
             for m in re.finditer(' ', SQL_No_Line):
-
                 if i < (len(SQL_Command_Pos)-1):
                     if m.start() >= SQL_Command_Pos[i][1] and m.end()<=SQL_Command_Pos[i+1][0]:
-
                         chunk_string = " ".join(self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]).split())
-
                         if chunk_string != SQL_Command_Pos[i][2]:
                             SQL_Command_Dict[SQL_Command_Pos[i][2]].append(self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]))
-
                 elif i == (len(SQL_Command_Pos)-1):
                     if m.start()>= SQL_Command_Pos[i][1]:
-
                         chunk_string = " ".join( self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]).split())
-
                         if chunk_string != SQL_Command_Pos[i][2]:
                             SQL_Command_Dict[SQL_Command_Pos[i][2]].append(self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]))
                     count = 0
                 pm=m
                 count +=1
-                    
-        print(SQL_Command_Dict)
 
         SQL_Select = []
         SQL_Math = []
         SQL_Where = []
 
-        for i in range(1,len(SQL_Command_Dict['SELECT'])):
-            if "," in SQL_Command_Dict['SELECT'][i] or i == len(SQL_Command_Dict['SELECT'])-1:
-                SQL_Select.append([SQL_Command_Dict['SELECT'][i-1].replace("_"," "), SQL_Command_Dict['SELECT'][i].strip(",")])
-               
+        current_key = 'SELECT'
+        for i in range(1,len(SQL_Command_Dict[current_key])):
+            if "," in SQL_Command_Dict[current_key][i] or i == len(SQL_Command_Dict[current_key])-1:
+                SQL_Select.append([SQL_Command_Dict[current_key][i-1].replace("_"," "), SQL_Command_Dict[current_key][i].strip(",")])
+
+         #Maths Selectors      
         for i in range(0,len(SQL_Maths_Operators)):
-            for j in  range(0,len(SQL_Command_Dict[SQL_Maths_Operators[i]])):
-                SQL_Math.append(SQL_Maths_Operators[i],SQL_Command_Dict[SQL_Maths_Operators[i][j].strip('()')])
-                              
-                
+            if SQL_Maths_Operators[i] in SQL_Command_Dict.keys():
+                for j in  range(0,len(SQL_Command_Dict[SQL_Maths_Operators[i]])):
+                    SQL_Math.append([SQL_Command_Dict[SQL_Maths_Operators[i]][j].strip('()'),SQL_Maths_Operators[i]])
+                del SQL_Command_Dict[SQL_Maths_Operators[i]]
+        
+        current_key = 'AND'
+        for i in range(0,len(SQL_Command_Dict[current_key])):
+            if SQL_Command_Dict[current_key][i] == '=':
+                if i+1 == len(SQL_Command_Dict[current_key])-1:
+                    SQL_Where.append([SQL_Command_Dict[current_key][i-1],SQL_Command_Dict[current_key][i],SQL_Command_Dict[current_key][i+1].strip("'")])
+                else:
+                    contains = True
+                    if "'" in SQL_Command_Dict[current_key][i+1] and SQL_Command_Dict[current_key][i+1].index("'") ==0 :
+                        SQL_Where.append([SQL_Command_Dict[current_key][i-1],SQL_Command_Dict[current_key][i],' '.join([SQL_Command_Dict[current_key][i+1],SQL_Command_Dict[current_key][i+2]]).strip("'")])
+            elif  SQL_Command_Dict[current_key][i] == "BETWEEN":
+                SQL_Where.append([SQL_Command_Dict[current_key][i], SQL_Command_Dict[current_key][i-1], SQL_Command_Dict[current_key][i+1], SQL_Command_Dict[current_key][i+2]])
+
         SQL_Command_Dict['SELECT'] = SQL_Select
-        SQL_Command_Dict['Maths'] = SQL_Math
+        SQL_Command_Dict['MATHS'] = SQL_Math
+        SQL_Command_Dict['WHERE'] = SQL_Where
 
         del SQL_Math
         del SQL_Select
+        del SQL_Where
+        del SQL_Command_Dict['AND']
 
-        active_worksheet = self.excel_workbook['Transactions']
+        active_worksheet = self.excel_workbook[SQL_Command_Dict['FROM'][0]]
 
-        #Gets the column indice for the excel spredsheet using the names from SQL Iterates through the top 13 rows of the spreadsheet and compares them to the list of Names provided
-        #If it matches the coulumn indices is saved along with the abriviated name into a new list. Column_Indicies
-        for columns,SQL_Columns_Count in itertools.product(range(1,13),range(0,len(SQL_Columns))):
-            if active_worksheet.cell(row=1,column=columns).value == SQL_Columns[SQL_Columns_Count][0]:
-                column_indices.append([columns,SQL_Columns[SQL_Columns_Count][1]])
-
-        #Does a similiar thing to the above loop however is just looking for the column the action is going to be performed on.
-        for columns in range(1,13):
-            if active_worksheet.cell(row=1,column=columns).value == SQL_Sum[0]:
-                SQL_Sum_index=columns
+        current_key = 'SELECT'
+        self.get_column(SQL_Command_Dict,active_worksheet,current_key)
+        current_key = 'MATHS'
+        self.get_column(SQL_Command_Dict,active_worksheet,current_key)
         
-        print(column_indices)
+        print(SQL_Command_Dict)
 
-        Output_String = self.SQL_Logic(active_worksheet,SQL_Where,column_indices,SQL_Sum_index,SQL_Columns)
+        return self.SQL_Logic(active_worksheet,SQL_Command_Dict)
 
-        return Output_String
-
-    def SQL_Logic(self,active_worksheet,SQL_Where,column_indices,SQL_Sum_Index,SQL_Columns):
+    def SQL_Logic(self,active_worksheet,SQL_Command_Dict):
         
         Output_Sum = 0
         Output_String = ""
@@ -137,12 +133,12 @@ class Report_Generator():
         #Logic Bit of the code
         #First loop goes through all of the rows in the spreadsheet
 
-        for i in range(12792,active_worksheet.max_row):
+        for i in range(0,active_worksheet.max_row):
             count = 0
             #This goes through the commands given by the SQL
-            for j in range(0, len(SQL_Where)):
+            for j in range(0, len(SQL_Command_Dict['SELECT'])):
                 #This goes through the column indicies list. Contains the number and Shorthand name of the column
-                for n in range (0, len(column_indices)):
+                for n in range (0, len(SQL_Command_Dict['WHERE'])):
                     #This checks to see if the command is going to be on the correct column
                     if SQL_Where[j][0] == column_indices[n][1]:
                         sheet_data = active_worksheet.cell(row=i,column=column_indices[n][0]).value
@@ -209,7 +205,13 @@ class Report_Generator():
         else:
             return True
 
-
+    def get_column(self,dict,active_worksheet,current_key):
+        for i,j in itertools.product(range(1,13),range(0,len(dict[current_key]))):
+            print("------HERE-------")
+            print( dict[current_key][j])
+            if active_worksheet.cell(row=1,column=i).value == dict[current_key][j][0]:
+                print("----Now Here----")
+                dict[current_key][j].append(i)
 
 if __name__ == '__main__':
     Report_Generator().Load()

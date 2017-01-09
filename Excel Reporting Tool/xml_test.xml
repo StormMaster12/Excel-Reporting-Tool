@@ -2,6 +2,7 @@
 <txt>This is a test</txt>
 <SQL>SELECT Payee_Account PA, Transaction_Date TD, Category CT,
 SUM (Amount)
+MAX (Amount)
 FROM Transactions
 WHERE 1 = 1 
 AND PA = 'WAGN Railways'
