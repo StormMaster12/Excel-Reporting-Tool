@@ -8,4 +8,13 @@ WHERE 1 = 1
 AND PA = 'WAGN Railways'
 AND TD BETWEEN 01/01/2015 AND 01/01/2016
 AND CT = 'Working'</SQL>
+<txt>This is a test</txt>
+<SQL>SELECT Payee_Account PA, Transaction_Date TD, Category CT,
+SUM (Amount)
+MAX (Amount)
+FROM Transactions
+WHERE 1 = 1 
+AND PA = 'WAGN Railways'
+AND TD BETWEEN 01/01/2015 AND 01/01/2016
+AND CT = 'Working'</SQL>
 </ROOT>
