@@ -12,6 +12,7 @@
     <OutputPath>.</OutputPath>
     <Name>Excel Reporting Tool</Name>
     <RootNamespace>Excel Reporting Tool</RootNamespace>
+    <PublishUrl>.</PublishUrl>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>

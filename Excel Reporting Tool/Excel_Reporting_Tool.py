@@ -1,29 +1,44 @@
+# -*- coding: utf-8 -*-
+
 import openpyxl
 import xml
 import itertools
 from datetime import date, datetime
 from dateutil.parser import parse
 import re
+import sys
+import glob
+import logging
+import logging.handlers
+from operator import itemgetter
+import codecs
+
 
 class Report_Generator():
 
-    def Load(self):
-
+    def Load(self,arguments):
+        my_logger.info('Program Has Started')
         #Loads the xml file. Controls the layout of the html
-        xml_tree = xml.etree.ElementTree.parse("xml_test.xml")
-        xml_root = xml_tree.getroot()
-        xml_iter = xml_tree.iter()
 
-        #Loads the excel file into memory
-        self.excel_workbook = openpyxl.load_workbook("Money Model.xlsm",data_only=True)
+
+        try:
+            xml_tree = xml.etree.ElementTree.parse('xml_test.xml')
+            xml_root = xml_tree.getroot()
+            xml_iter = xml_tree.iter()
+
+            #Loads the excel file into memory
+            self.excel_workbook = openpyxl.load_workbook('Money_Model.xlsm'.replace('_',' '),data_only=True)
+        except Exception as e:
+            my_logger.error("Failed to Open File",exc_info=True)
+            return;
 
         self.parse_instructions(xml_iter)
 
     def parse_instructions(self,xml_iter):
 
-        html_output = open("report.html","w")
+        html_output = codecs.open("report.html","w","utf-8")
 
-        report = """<html>
+        report = """<meta charset="UTF-8"> <html>
         <head></head>"""
 
         for node in xml_iter:
@@ -32,116 +47,76 @@ class Report_Generator():
         
             elif node.tag=="SQL":
                 report +="\n" + "<body>" + self.parse_SQL(node.text) + "</body>"
-                print("FINISHED LOGIC")
 
         report += "</html>"
         html_output.write(report)
-        print("WRITTEN REPORT")
         html_output.close()
 
     def parse_SQL(self,SQL):
 
-        SQL_Operators = ['SELECT','FROM','WHERE','AND','SUM','AVG','COUNT','MAX','MIN']
+        SQL_Operators = ['SELECT','FROM','WHERE','AND','SUM','AVG','COUNT','MAX','MIN','GROUP BY']
         SQL_Maths_Operators = ['SUM','AVG','COUNT','MAX','MIN']
-        SQL_Command_Pos = []     
+            
         SQL_Command_Dict = {}
 
-        SQL_No_Line = SQL.replace("\n"," ").replace('\r',' ') + " "
+        self.get_parsed_SQL(SQL,SQL_Command_Dict,SQL_Operators)
 
-        for string in SQL_Operators:
-            for m in re.finditer(string, SQL_No_Line):
-                SQL_Command_Pos.append([m.start(),m.end(),string])
-        SQL_Command_Pos.sort()
-
-        for i in range(0,len(SQL_Command_Pos)): SQL_Command_Dict[SQL_Command_Pos[i][2]] = []
-
-        for i in range(0,len(SQL_Command_Pos)):
-            pm=''
-            count=0         
-            for m in re.finditer(' ', SQL_No_Line):
-                if i < (len(SQL_Command_Pos)-1):
-                    if m.start() >= SQL_Command_Pos[i][1] and m.end()<=SQL_Command_Pos[i+1][0]:
-                        chunk_string = " ".join(self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]).split())
-                        if chunk_string != SQL_Command_Pos[i][2]:
-                            SQL_Command_Dict[SQL_Command_Pos[i][2]].append(self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]))
-                elif i == (len(SQL_Command_Pos)-1):
-                    if m.start()>= SQL_Command_Pos[i][1]:
-                        chunk_string = " ".join( self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]).split())
-                        if chunk_string != SQL_Command_Pos[i][2]:
-                            SQL_Command_Dict[SQL_Command_Pos[i][2]].append(self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]))
-                    count = 0
-                pm=m
-                count +=1
-
+        SQL_Group_By =[]
         SQL_Select = []
         SQL_Math = []
         SQL_Where = []
         SQL_New_Math = []
 
+        current_key = 'GROUP BY'
+        try:
+            if len(SQL_Command_Dict[current_key]) > 0:
+                for sublist in SQL_Command_Dict['GROUP BY']:
+                        a = sublist.replace(",","")
+                        SQL_Group_By.append([a])
+                SQL_Command_Dict[current_key] = SQL_Group_By
+        except KeyError as e:
+            print(False)
+
         current_key = 'SELECT'
-        for i in range(1,len(SQL_Command_Dict[current_key])):
-            if "," in SQL_Command_Dict[current_key][i] or i == len(SQL_Command_Dict[current_key])-1:
-                SQL_Select.append([SQL_Command_Dict[current_key][i-1].replace("_"," "), SQL_Command_Dict[current_key][i].strip(",")])
+        self.get_comma_list(SQL_Select,SQL_Command_Dict[current_key])
 
-         #Maths Selectors      
-        for i in range(0,len(SQL_Maths_Operators)):
-            if SQL_Maths_Operators[i] in SQL_Command_Dict.keys():
-                for j in  range(0,len(SQL_Command_Dict[SQL_Maths_Operators[i]])):
-                    SQL_Math.append([SQL_Command_Dict[SQL_Maths_Operators[i]][j].strip('()'),SQL_Maths_Operators[i]])
-                #del SQL_Command_Dict[SQL_Maths_Operators[i]]
-        to_be_removed = []
-
-        for i in range(0,len(SQL_Math)):
-            print("LOOPING")
-            if i != len(SQL_Math)-1:
-                print("NOT AT THE END")
-                if SQL_Math[i][0] in SQL_Math[i+1]:
-                    print('FOUND A DUPE')
-                    SQL_Math[i].append(SQL_Math[i+1][1])
-                    to_be_removed.append(i+1)
-
-        for i in range(0,len(to_be_removed)):
-            del SQL_Math[to_be_removed[i]-i]
 
         current_key = 'AND'
-        for i in range(0,len(SQL_Command_Dict[current_key])):
-            if SQL_Command_Dict[current_key][i] == '=':
-                if i+1 == len(SQL_Command_Dict[current_key])-1:
-                    SQL_Where.append([SQL_Command_Dict[current_key][i-1],SQL_Command_Dict[current_key][i],SQL_Command_Dict[current_key][i+1].strip("'")])
-                else:
-                    contains = True
-                    if "'" in SQL_Command_Dict[current_key][i+1] and SQL_Command_Dict[current_key][i+1].index("'") ==0 :
-                        SQL_Where.append([SQL_Command_Dict[current_key][i-1],SQL_Command_Dict[current_key][i],' '.join([SQL_Command_Dict[current_key][i+1],SQL_Command_Dict[current_key][i+2]]).strip("'")])
-            elif  SQL_Command_Dict[current_key][i] == "BETWEEN":
-                SQL_Where.append([ SQL_Command_Dict[current_key][i-1],SQL_Command_Dict[current_key][i], SQL_Command_Dict[current_key][i+1], SQL_Command_Dict[current_key][i+2]])
+        self.parse_And(SQL_Command_Dict[current_key],SQL_Where)
+
+        #Maths Selectors      
+        self.parse_Maths(SQL_Maths_Operators,SQL_Command_Dict,SQL_Math)
 
         SQL_Command_Dict['SELECT'] = SQL_Select
-        SQL_Command_Dict['MATHS'] = SQL_Math
         SQL_Command_Dict['WHERE'] = SQL_Where
+        SQL_Command_Dict['MATHS'] = SQL_Math
 
-        del SQL_Math
         del SQL_Select
         del SQL_Where
+        del SQL_Math
         del SQL_Command_Dict['AND']
+
+        if SQL_Command_Dict['MATHS']  and  not SQL_Command_Dict['GROUP BY']:
+            my_logger.info('Group by Required When Maths operators present') 
+            raise NameError('Group by Required When Maths operators present') 
 
         active_worksheet = self.excel_workbook[SQL_Command_Dict['FROM'][0]]
 
         current_key = 'SELECT'
-        self.get_column(SQL_Command_Dict,active_worksheet,current_key,'WHERE')
+        self.get_column(active_worksheet,SQL_Command_Dict[current_key],current_key,SQL_Command_Dict)
+        self.get_column(active_worksheet,SQL_Command_Dict[current_key],'WHERE',SQL_Command_Dict)
+        self.get_column(active_worksheet,SQL_Command_Dict[current_key],'GROUP BY',SQL_Command_Dict)
         current_key = 'MATHS'
-        self.get_column(SQL_Command_Dict,active_worksheet,current_key,'MATHS')
-        
+        self.get_column(active_worksheet,SQL_Command_Dict[current_key],current_key,SQL_Command_Dict)
 
 
-        print(SQL_Command_Dict)
-        
         return self.SQL_Logic(active_worksheet,SQL_Command_Dict)
 
     def SQL_Logic(self,active_worksheet,SQL_Command_Dict):
         
-        Output_Sum = 0
         Output_List = []
-        Min_Max_Count = []
+        Group_By = []
+
         Output_String = ''
 
         #Logic Bit of the code
@@ -168,51 +143,148 @@ class Report_Generator():
 
             #If all the checks have passed, the counter will equal the total number of clauses given. Will then add data from the column specified by SQL_Sun_Index
             if count == len(SQL_Command_Dict['WHERE']):
-               
                 flat_list = []
+                Group_By_Flat_List = []
 
-                for j in range(0,len(SQL_Command_Dict['WHERE'])):
-                    sheet_value = active_worksheet.cell(row=i,column=SQL_Command_Dict['WHERE'][j][-1]).value
+                for select_sublist in SQL_Command_Dict['SELECT']:
+                    sheet_value = active_worksheet.cell(row=i,column=select_sublist[-1]).value
                     if type(sheet_value) is datetime:
                         flat_list.append(datetime.strftime(sheet_value,'%d-%m-%Y'))
                     else:
                         flat_list.append(sheet_value)
-                for sublist in SQL_Command_Dict['MATHS']:
-                        flat_list.append('£'+ str(active_worksheet.cell(row=i,column=sublist[-1]).value))
-                        Min_Max_Count.append(active_worksheet.cell(row=i,column=sublist[-1]).value)
+
+                for group_by_sublist in SQL_Command_Dict['GROUP BY']:
+                    if type(active_worksheet.cell(row=i,column=group_by_sublist[-1]).value) is datetime:
+                        Group_By_Flat_List.append(datetime.strftime(active_worksheet.cell(row=i,column=group_by_sublist[-1]).value,'%d-%m-%Y'))
+                    else:
+                        Group_By_Flat_List.append(active_worksheet.cell(row=i,column=group_by_sublist[-1]).value)
+
+                for maths_sublist in SQL_Command_Dict['MATHS']:
+                    flat_list.append('£'+ str(active_worksheet.cell(row=i,column=maths_sublist[-1]).value))
+                    Group_By_Flat_List.append(active_worksheet.cell(row=i,column=maths_sublist[-1]).value)
+
+                Group_By.append(Group_By_Flat_List)
                 Output_List.append(flat_list)
+
+        del SQL_Command_Dict['WHERE'],active_worksheet
+
+        Output_List.sort(key=itemgetter(2))
+        Group_By.sort(key=itemgetter(0))
         
-        print(Output_List)
-        checked_list = []
-        for sublist in Output_List:
-            for i in range(0,len(sublist)):
-                print(i)
-                if sublist[i] not in checked_list or "£" in sublist[i]:
-                    checked_list.append(sublist[i])
-                else:
-                    sublist[i] = ""
-        del checked_list
+        header_list_group = []
+        header_list_select = []
 
-        Output_String += '<table> \n<tr>'
-        for substring in SQL_Command_Dict['WHERE']:
-            Output_String +=  '\n<th>' + substring[0] + '</th>'
+        Group_By_Output_List = []
+        self.return_group_by(Group_By,Group_By_Output_List,header_list_group,SQL_Command_Dict['MATHS'])
 
-        Output_String += '</tr>'
+        #self.remove_same(Output_List)
 
-        for sublist in Output_List:
-            Output_String += '<tr><td>' + '</td><td>'.join(sublist) + '</td></tr>'
-        
-        Output_String += '</table>'
+        print('STARTING TABLES')
 
-        for sublist in SQL_Command_Dict['MATHS']:
-            if 'MAX' in sublist: Output_String += '\n <p>Max Value : ' + str(max(Min_Max_Count))+ '</p>'
-            if 'MIN' in sublist: Output_String += '\n <p>Min Value : ' + str(min(Min_Max_Count))+ '</p>'
-            if 'AVG' in sublist: Output_String += '\n <p>Average Value : ' + str(sum(Min_Max_Count)/len(Min_Max_Count))+ '</p>'
-            if 'SUM' in sublist: Output_String += '\n <p>Total Cost : ' + str(sum(Min_Max_Count))+ '</p>'
-            if 'COUNT' in sublist: Output_String += '\n <p>Total Number of Elements : ' + str(len(Min_Max_Count))+ '</p>'
-            
+        Output_String += '\n'.join(self.generate_html_table(Output_List,SQL_Command_Dict['SELECT'],header_list_select))
+        print('FIRST TABLE COMPLETE')
+
+        del Output_List, header_list_select,SQL_Command_Dict['SELECT']
+
+        Output_String += '\n'.join(self.generate_html_table(Group_By_Output_List,SQL_Command_Dict['GROUP BY'],header_list_group))
+
+        print('SECOND TABLE COMPLETE')
+
+        del Group_By_Output_List,SQL_Command_Dict['GROUP BY'],header_list_group
+
+        print('FINISHED')
 
         return  Output_String
+
+    def get_parsed_SQL(self,SQL,SQL_Command_Dict,SQL_Operators):
+
+        SQL_Command_Pos = [] 
+        SQL_No_Line = SQL.replace("\n"," ").replace('\r',' ') + " "
+
+        for string in SQL_Operators:
+            for m in re.finditer(string, SQL_No_Line):
+                SQL_Command_Pos.append([m.start(),m.end(),string])
+        SQL_Command_Pos.sort()
+
+        for i in range(0,len(SQL_Command_Pos)): SQL_Command_Dict[SQL_Command_Pos[i][2]] = []
+
+        for i in range(0,len(SQL_Command_Pos)):
+            pm=''
+            count=0         
+            for m in re.finditer(' ', SQL_No_Line):
+                if i < (len(SQL_Command_Pos)-1):
+                    if m.start() >= SQL_Command_Pos[i][1] and m.end()<=SQL_Command_Pos[i+1][0]:
+                        chunk_string = " ".join(self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]).split())
+                        if chunk_string != SQL_Command_Pos[i][2]:
+                            SQL_Command_Dict[SQL_Command_Pos[i][2]].append(self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]))
+                elif i == (len(SQL_Command_Pos)-1):
+                    if m.start()> SQL_Command_Pos[i][1]:                     
+                        chunk_string = " ".join( self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]).split())
+                        if chunk_string != SQL_Command_Pos[i][2]:
+                            SQL_Command_Dict[SQL_Command_Pos[i][2]].append(self.get_string(SQL_No_Line,count,m,pm,SQL_Command_Pos[i][1]))
+                    count = 0
+                pm=m
+                count +=1
+
+    def is_in(self,i_str,i_list):
+        if i_str not in i_list:
+            i_list.append(i_str)
+            
+
+    def return_maths(self,SQL_Command_Dict,Min_Max_Count,m_list,header_list):
+        for sublist in SQL_Command_Dict:
+            if 'MAX' in sublist:
+                m_list.append( str(max(Min_Max_Count)))
+                self.is_in('MAX',header_list)
+            if 'MIN' in sublist: 
+                m_list.append(str(min(Min_Max_Count)))
+                self.is_in('MIN',header_list)
+            if 'AVG' in sublist: 
+                m_list.append((sum(Min_Max_Count)/len(Min_Max_Count)))
+                self.is_in('AVG',header_list)
+            if 'SUM' in sublist: 
+                m_list.append(str(sum(Min_Max_Count)))
+                self.is_in('SUM',header_list)
+            if 'COUNT' in sublist: 
+                m_list.append(str(len(Min_Max_Count)))
+                self.is_in('COUNT',header_list)
+
+    def get_comma_list(self,list_dict,dict_arr):
+
+        for i in range(0,len(dict_arr)):
+            if "," in dict_arr[i] or i == len(dict_arr)-1:
+                list_dict.append([dict_arr[i-1].replace("_"," "), dict_arr[i].strip(",")])
+
+
+    def parse_Maths(self,Operators_Dict,Main_dict,export_list):
+
+        for i in range(0,len(Operators_Dict)):
+            if Operators_Dict[i] in Main_dict.keys():
+                for j in  range(0,len(Main_dict[Operators_Dict[i]])):
+                    export_list.append([Main_dict[Operators_Dict[i]][j].strip('()'),Operators_Dict[i]])
+        to_be_removed = []
+
+        for i in range(0,len(export_list)):
+            if i != len(export_list)-1:
+                if export_list[i][0] in export_list[i+1]:
+                    export_list[i].append(export_list[i+1][1])
+                    to_be_removed.append(i+1)
+
+        for i in range(0,len(to_be_removed)):
+            del export_list[to_be_removed[i]-i]
+
+    def parse_And(self,dict_arr,export_list):
+
+        for i in range(0,len(dict_arr)):
+            if dict_arr[i] == '=':
+                if i+1 == len(dict_arr)-1:
+                    export_list.append([dict_arr[i-1],dict_arr[i],dict_arr[i+1].strip("'")])
+                else:
+                    contains = True
+                    if "'" in dict_arr[i+1] and dict_arr[i+1].index("'") ==0 :
+                        export_list.append([dict_arr[i-1],dict_arr[i],' '.join([dict_arr[i+1],dict_arr[i+2]]).strip("'")])
+            elif  dict_arr[i] == "BETWEEN":
+                export_list.append([ dict_arr[i-1],dict_arr[i], dict_arr[i+1], dict_arr[i+2]])
 
     def to_date(self,str_to_date):
         return datetime.strptime(str_to_date, '%d/%m/%Y').date()
@@ -231,12 +303,83 @@ class Report_Generator():
         else:
             return True
 
-    def get_column(self,dict,active_worksheet,current_key,other_key):
-        for i,j in itertools.product(range(1,13),range(0,len(dict[current_key]))):
-            if active_worksheet.cell(row=1,column=i).value == dict[current_key][j][0]:
-                for x in range(len(dict[other_key])):
-                    if dict[current_key][j][0] or dict[current_key][j][1] in dict[other_key][i]:
-                        dict[other_key][j].append(i)
+    def get_column(self,active_worksheet,current_key,other_key,SQL_Dict):
+        
+        for i in range(1,13):
+            for dict_list in current_key:
+                if active_worksheet.cell(row=1,column=i).value == dict_list[0]:
+                    for sublist in SQL_Dict[other_key]:
+                        if dict_list[0] in sublist or dict_list[1] in sublist:
+                            if other_key == 'GROUP BY':
+                                sublist.insert(0,dict_list[0])
+                            sublist.append(i)
+
+    def generate_html_table(self,Output_List,dict_arr,header_list):
+
+        Output_String =""
+        yield'<table> \n  <tr> \n'
+        for substring in dict_arr:
+            yield '   <th>' + str(substring[1]) + '</th>'
+
+        for h_string in header_list:
+            yield  '   <th>' + str(h_string) + '</th>'
+        yield '  </tr>'
+
+        for sublist in Output_List:
+            yield '\n  <tr> \n'
+            for l_string in sublist:
+                yield'    <td>'+ str(l_string) + '</td>'
+            yield '\n  <tr> \n'
+
+        yield '</table>'
+
+    def remove_same(self,list):
+        checked_list = []
+        for sublist in list:
+            for i in range(0,len(sublist)):
+                if sublist[i] not in checked_list or "£" in sublist[i]:
+                    checked_list.append(sublist[i])
+                else:
+                    sublist[i] = ""
+        del checked_list
+
+    def return_group_by(self,Group_By,Group_By_Output_List,header_list_group,SQL_Command_Dict):
+        Grouped_Items = []
+        for y,items in itertools.groupby(Group_By,itemgetter(0)):
+            Grouped_Items.append(list(items))
+
+        Full_list = []
+        
+
+        for g_sublist in Grouped_Items:
+            flat_list = []
+            int_list = [[] for _ in range(0,len(SQL_Command_Dict))]
+            for i,sub_sublist in itertools.product(range(0,len(int_list)),g_sublist):
+                for value in sub_sublist:
+                    if type(value) is int or type(value) is float :
+                        int_list[i].append(value)
+                    else:
+                        if value not in flat_list:
+                            flat_list.append(value)
+            for item in int_list:
+                self.return_maths(SQL_Command_Dict,item,flat_list,header_list_group)
+            Group_By_Output_List.append(flat_list)
+
+        del Grouped_Items
+
+LOG_FILENAME = __name__
+
+# Set up a specific logger with our desired output level
+my_logger = logging.getLogger('MyLogger')
+my_logger.setLevel(logging.DEBUG)
+
+
+# Add the log message handler to the logger
+handler = logging.handlers.RotatingFileHandler(
+              LOG_FILENAME, maxBytes=20, backupCount=5)
+
+my_logger.addHandler(handler)
+
 
 if __name__ == '__main__':
-    Report_Generator().Load()
+    Report_Generator().Load(sys.argv)
