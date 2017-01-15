@@ -12,52 +12,85 @@ import logging
 import logging.handlers
 from operator import itemgetter
 import codecs
+import tkinter as tk
 
 
 class Report_Generator():
 
-    def Load(self,arguments):
-        my_logger.info('Program Has Started')
-        #Loads the xml file. Controls the layout of the html
+    def Main(self):
 
-
-        try:
-            xml_tree = xml.etree.ElementTree.parse('xml_test.xml')
-            xml_root = xml_tree.getroot()
-            xml_iter = xml_tree.iter()
-
-            #Loads the excel file into memory
-            self.excel_workbook = openpyxl.load_workbook('Money_Model.xlsm'.replace('_',' '),data_only=True)
-        except Exception as e:
-            my_logger.error("Failed to Open File",exc_info=True)
-            return;
-
-        self.parse_instructions(xml_iter)
-
-    def parse_instructions(self,xml_iter):
-
-        html_output = codecs.open("report.html","w","utf-8")
+        xml_iter,excel_workbook = self.Load()
 
         report = """<meta charset="UTF-8"> <html>
-        <head></head>"""
+        <head>
+        <!-- Plotly.js -->
+        <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <style>
+        .expand1 { display: none;
+        }
+
+        .expand2 { display: none;
+        }
+        </style>
+
+        <script> $(document).ready(function(){
+            $(".btn1").click(function(){
+                $(".expand1").toggle();});
+            $(".btn2").click(function(){
+                $(".expand2").toggle();});
+        }) </script>
+
+        
+        </head>"""
 
         for node in xml_iter:
             if node.tag=="txt":
                 report += "\n" + "<body><p>" + node.text + "</p></body>"
         
             elif node.tag=="SQL":
-                report +="\n" + "<body>" + self.parse_SQL(node.text) + "</body>"
+
+                SQL_Operators = ['SELECT','FROM','WHERE','AND','SUM','AVG','COUNT','MAX','MIN','GROUP BY']
+                SQL_Maths_Operators = ['SUM','AVG','COUNT','MAX','MIN']
+            
+                SQL_Command_Dict = {}
+                Output_List = []
+                Group_By = []
+
+                self.parse_SQL(node.text,SQL_Command_Dict,SQL_Operators,SQL_Maths_Operators)
+                active_worksheet = excel_workbook[SQL_Command_Dict['FROM'][0]]
+                self.find_columns(active_worksheet,SQL_Command_Dict)
+                self.SQL_Logic(active_worksheet,SQL_Command_Dict,Group_By,Output_List)
+                output = self.output_string_manipulation(SQL_Command_Dict,Output_List,Group_By)
+
+                report +="\n" + "<body padding:0;margin:0;>" + output  + "</body>"
 
         report += "</html>"
+        html_output = codecs.open("report.html","w","utf-8")
         html_output.write(report)
         html_output.close()
 
-    def parse_SQL(self,SQL):
+    def Load(self):
+        my_logger.info('Program Has Started')
+        #Loads the xml file. Controls the layout of the html
 
-        SQL_Operators = ['SELECT','FROM','WHERE','AND','SUM','AVG','COUNT','MAX','MIN','GROUP BY']
-        SQL_Maths_Operators = ['SUM','AVG','COUNT','MAX','MIN']
-            
-        SQL_Command_Dict = {}
+        self.file_locations = []
+        self.tk_window()
+
+        try:
+            xml_tree = xml.etree.ElementTree.parse(self.file_locations[0])
+            xml_root = xml_tree.getroot()
+            xml_iter = xml_tree.iter()
+
+            #Loads the excel file into memory
+            excel_workbook = openpyxl.load_workbook(self.file_locations[1],data_only=True)
+        except Exception as e:
+            my_logger.error("Failed to Open File",exc_info=True)
+            return;
+
+        return xml_iter,excel_workbook
+
+    def parse_SQL(self,SQL,SQL_Command_Dict,SQL_Operators,SQL_Maths_Operators):
 
         self.get_parsed_SQL(SQL,SQL_Command_Dict,SQL_Operators)
 
@@ -100,7 +133,7 @@ class Report_Generator():
             my_logger.info('Group by Required When Maths operators present') 
             raise NameError('Group by Required When Maths operators present') 
 
-        active_worksheet = self.excel_workbook[SQL_Command_Dict['FROM'][0]]
+    def find_columns(self,active_worksheet,SQL_Command_Dict):
 
         current_key = 'SELECT'
         self.get_column(active_worksheet,SQL_Command_Dict[current_key],current_key,SQL_Command_Dict)
@@ -109,15 +142,9 @@ class Report_Generator():
         current_key = 'MATHS'
         self.get_column(active_worksheet,SQL_Command_Dict[current_key],current_key,SQL_Command_Dict)
 
+    def SQL_Logic(self,active_worksheet,SQL_Command_Dict,Group_By,Output_List):
 
-        return self.SQL_Logic(active_worksheet,SQL_Command_Dict)
 
-    def SQL_Logic(self,active_worksheet,SQL_Command_Dict):
-        
-        Output_List = []
-        Group_By = []
-
-        Output_String = ''
 
         #Logic Bit of the code
         #First loop goes through all of the rows in the spreadsheet
@@ -143,58 +170,69 @@ class Report_Generator():
 
             #If all the checks have passed, the counter will equal the total number of clauses given. Will then add data from the column specified by SQL_Sun_Index
             if count == len(SQL_Command_Dict['WHERE']):
-                flat_list = []
-                Group_By_Flat_List = []
-
-                for select_sublist in SQL_Command_Dict['SELECT']:
-                    sheet_value = active_worksheet.cell(row=i,column=select_sublist[-1]).value
-                    if type(sheet_value) is datetime:
-                        flat_list.append(datetime.strftime(sheet_value,'%d-%m-%Y'))
-                    else:
-                        flat_list.append(sheet_value)
-
-                for group_by_sublist in SQL_Command_Dict['GROUP BY']:
-                    if type(active_worksheet.cell(row=i,column=group_by_sublist[-1]).value) is datetime:
-                        Group_By_Flat_List.append(datetime.strftime(active_worksheet.cell(row=i,column=group_by_sublist[-1]).value,'%d-%m-%Y'))
-                    else:
-                        Group_By_Flat_List.append(active_worksheet.cell(row=i,column=group_by_sublist[-1]).value)
-
-                for maths_sublist in SQL_Command_Dict['MATHS']:
-                    flat_list.append('£'+ str(active_worksheet.cell(row=i,column=maths_sublist[-1]).value))
-                    Group_By_Flat_List.append(active_worksheet.cell(row=i,column=maths_sublist[-1]).value)
-
-                Group_By.append(Group_By_Flat_List)
-                Output_List.append(flat_list)
+                self.return_table_data(SQL_Command_Dict,active_worksheet,i,Group_By,Output_List)
 
         del SQL_Command_Dict['WHERE'],active_worksheet
 
-        Output_List.sort(key=itemgetter(2))
+    def output_string_manipulation(self,SQL_Command_Dict,Output_List,Group_By):
+
+        Output_String = ''
+
+        Output_List.sort(key=itemgetter(0))
         Group_By.sort(key=itemgetter(0))
-        
+
         header_list_group = []
         header_list_select = []
 
         Group_By_Output_List = []
+
+        self.graph_output = ""
         self.return_group_by(Group_By,Group_By_Output_List,header_list_group,SQL_Command_Dict['MATHS'])
 
-        #self.remove_same(Output_List)
+        Output_String += '\n <button type="button" class="btn1">Toggle the Table Below</button>'
 
-        print('STARTING TABLES')
+        Output_String += '<div class=expand1>'
 
-        Output_String += '\n'.join(self.generate_html_table(Output_List,SQL_Command_Dict['SELECT'],header_list_select))
-        print('FIRST TABLE COMPLETE')
+        Output_String += '\n'.join(self.generate_html_table(Output_List,SQL_Command_Dict['SELECT'],header_list_select,1))
+        Output_String += '</div>'
 
         del Output_List, header_list_select,SQL_Command_Dict['SELECT']
 
-        Output_String += '\n'.join(self.generate_html_table(Group_By_Output_List,SQL_Command_Dict['GROUP BY'],header_list_group))
-
-        print('SECOND TABLE COMPLETE')
+        Output_String += '\n <button type="button" class="btn2">Toggle the Table Below</button>'
+        Output_String += '<div class=expand2>'
+        Output_String += '\n'.join(self.generate_html_table(Group_By_Output_List,SQL_Command_Dict['GROUP BY'],header_list_group,2))
+        Output_String += '</div>'
 
         del Group_By_Output_List,SQL_Command_Dict['GROUP BY'],header_list_group
 
-        print('FINISHED')
+        Output_String += self.graph_output
 
         return  Output_String
+
+    def return_table_data(self,SQL_Command_Dict,active_worksheet,i,Group_By,Output_List):
+
+        flat_list = []
+        Group_By_Flat_List = []
+
+        for select_sublist in SQL_Command_Dict['SELECT']:
+            sheet_value = active_worksheet.cell(row=i,column=select_sublist[-1]).value
+            if type(sheet_value) is datetime:
+                flat_list.append(datetime.strftime(sheet_value,'%d-%m-%Y'))
+            else:
+                flat_list.append(sheet_value)
+
+        for group_by_sublist in SQL_Command_Dict['GROUP BY']:
+            if type(active_worksheet.cell(row=i,column=group_by_sublist[-1]).value) is datetime:
+                Group_By_Flat_List.append(datetime.strftime(active_worksheet.cell(row=i,column=group_by_sublist[-1]).value,'%d-%m-%Y'))
+            else:
+                Group_By_Flat_List.append(active_worksheet.cell(row=i,column=group_by_sublist[-1]).value)
+
+        for maths_sublist in SQL_Command_Dict['MATHS']:
+            flat_list.append('£'+ str(active_worksheet.cell(row=i,column=maths_sublist[-1]).value))
+            Group_By_Flat_List.append(active_worksheet.cell(row=i,column=maths_sublist[-1]).value)
+
+        Group_By.append(Group_By_Flat_List)
+        Output_List.append(flat_list)
 
     def get_parsed_SQL(self,SQL,SQL_Command_Dict,SQL_Operators):
 
@@ -228,8 +266,7 @@ class Report_Generator():
 
     def is_in(self,i_str,i_list):
         if i_str not in i_list:
-            i_list.append(i_str)
-            
+            i_list.append(i_str)        
 
     def return_maths(self,SQL_Command_Dict,Min_Max_Count,m_list,header_list):
         for sublist in SQL_Command_Dict:
@@ -255,7 +292,6 @@ class Report_Generator():
             if "," in dict_arr[i] or i == len(dict_arr)-1:
                 list_dict.append([dict_arr[i-1].replace("_"," "), dict_arr[i].strip(",")])
 
-
     def parse_Maths(self,Operators_Dict,Main_dict,export_list):
 
         for i in range(0,len(Operators_Dict)):
@@ -277,7 +313,7 @@ class Report_Generator():
 
         for i in range(0,len(dict_arr)):
             if dict_arr[i] == '=':
-                if i+1 == len(dict_arr)-1:
+                if dict_arr[i+1][0] == "'" and dict_arr[i+1][-1] == "'" :
                     export_list.append([dict_arr[i-1],dict_arr[i],dict_arr[i+1].strip("'")])
                 else:
                     contains = True
@@ -286,8 +322,7 @@ class Report_Generator():
             elif  dict_arr[i] == "BETWEEN":
                 export_list.append([ dict_arr[i-1],dict_arr[i], dict_arr[i+1], dict_arr[i+2]])
 
-    def to_date(self,str_to_date):
-        return datetime.strptime(str_to_date, '%d/%m/%Y').date()
+    def to_date(self,str_to_date): return datetime.strptime(str_to_date, '%d/%m/%Y').date()
 
     def get_string(self,string,count,m,pm,SQL_Command_Pos):
         if count == 0:
@@ -314,10 +349,10 @@ class Report_Generator():
                                 sublist.insert(0,dict_list[0])
                             sublist.append(i)
 
-    def generate_html_table(self,Output_List,dict_arr,header_list):
+    def generate_html_table(self,Output_List,dict_arr,header_list,current_table):
 
         Output_String =""
-        yield'<table> \n  <tr> \n'
+        yield'<table padding:0;margin:0;> \n  <tr> \n'
         for substring in dict_arr:
             yield '   <th>' + str(substring[1]) + '</th>'
 
@@ -328,8 +363,8 @@ class Report_Generator():
         for sublist in Output_List:
             yield '\n  <tr> \n'
             for l_string in sublist:
-                yield'    <td>'+ str(l_string) + '</td>'
-            yield '\n  <tr> \n'
+                yield'    <td >'+ str(l_string) + '</td>'
+            yield '\n  </tr> \n'
 
         yield '</table>'
 
@@ -345,13 +380,16 @@ class Report_Generator():
 
     def return_group_by(self,Group_By,Group_By_Output_List,header_list_group,SQL_Command_Dict):
         Grouped_Items = []
+
         for y,items in itertools.groupby(Group_By,itemgetter(0)):
             Grouped_Items.append(list(items))
 
         Full_list = []
         
-
+        count = 0
         for g_sublist in Grouped_Items:
+            
+            title_list = []
             flat_list = []
             int_list = [[] for _ in range(0,len(SQL_Command_Dict))]
             for i,sub_sublist in itertools.product(range(0,len(int_list)),g_sublist):
@@ -361,11 +399,41 @@ class Report_Generator():
                     else:
                         if value not in flat_list:
                             flat_list.append(value)
+                            title_list.append(value)
+            
             for item in int_list:
                 self.return_maths(SQL_Command_Dict,item,flat_list,header_list_group)
+                self.return_graph(item,'box',count,title_list)
+            count += 1
+
             Group_By_Output_List.append(flat_list)
 
         del Grouped_Items
+
+    def return_graph(self,int_list,type,count,title):
+        self.graph_output += '<div id="graph' + str(count) + '"></div>'
+        self.graph_output += '<script> var trace1 = { x:' + str(int_list) + ', \n type:"' + type + '''",\n name: "Set 1"};
+        var data = [trace1]; \n var layout = {title: " ''' +str(title[0]) +'''"};
+        Plotly.newPlot("graph''' + str(count) + '", data, layout) </script> \n'
+
+    def tk_window(self):
+        root = tk.Tk()
+        button = tk.Button(root,text='Pick Xml File',command=lambda:  self.onbutton(button,button1,1,root))
+        button1 = tk.Button(root,text='Pick Excel File',command=lambda: self.onbutton(button1,button,2,root))
+        button.pack()
+        button1.config(state='disabled')
+        button1.pack()
+        root.mainloop()
+
+    def onbutton(self,button,button1,count,root):
+        
+        self.file_locations.append(tk.filedialog.askopenfilename())
+        button.config(state='disabled')
+
+        if count != 2:
+            button1.config(state='active')
+        else:
+            root.destroy()
 
 LOG_FILENAME = __name__
 
@@ -374,12 +442,6 @@ my_logger = logging.getLogger('MyLogger')
 my_logger.setLevel(logging.DEBUG)
 
 
-# Add the log message handler to the logger
-handler = logging.handlers.RotatingFileHandler(
-              LOG_FILENAME, maxBytes=20, backupCount=5)
-
-my_logger.addHandler(handler)
-
 
 if __name__ == '__main__':
-    Report_Generator().Load(sys.argv)
+    Report_Generator().Main()
