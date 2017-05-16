@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+
 import openpyxl
 import xml
 import itertools
@@ -11,53 +12,39 @@ from operator import itemgetter
 import codecs
 import tkinter as tk
 from tkinter import filedialog as fd
-import webbrowser
-import collections
+
+
 
 class Report_Generator():
 
     def Main(self):
-
-        html_class_arr = []
 
         report = """<meta charset="UTF-8"> <html>
         <head>
         <!-- Plotly.js -->
         <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-        
-         """
+        <style>
+        .expand1 { display: none;
+        }
 
-        xml_file_path,excel_file_path = tk_windows().tk_window()
-        xml_iter,excel_workbook = self.Load(xml_file_path,excel_file_path)
+        .expand2 { display: none;
+        }
+        </style>
 
-        report += "<style type='text/css'>"
+        <script> $(document).ready(function(){
+            $(".btn1").click(function(){
+                $(".expand1").toggle();});
+            $(".btn2").click(function(){
+                $(".expand2").toggle();});
+        }) </script>
+        </head>"""
+
+        xml_iter,excel_workbook = self.Load()
 
         for node in xml_iter:
-
-            if node.tag =="Style":
-                for subnode in  node:
-                    flat_list = ['','']
-                    temp_string = ""
-
-                    if subnode.tag == "Class":
-                            flat_list[0],flat_list[1], temp_string = self.Style_Class(subnode)
-
-                            html_class_arr.append(flat_list)
-                            report += temp_string
-
-                report += "\n</style> \n </head> \n <body>"
-
-            elif node.tag=="txt":
-
-                for sublist in html_class_arr:
-                    if 'Text' == sublist[1]:
-                        report+= '<p class="' + sublist[0] + '">'
-
-                else:
-                    report += '<p>'
-
-                report += node.text + "</p>"
+            if node.tag=="txt":
+                report += "\n" + "<body><p>" + node.text + "</p></body>"
         
             elif node.tag=="SQL":
 
@@ -71,80 +58,33 @@ class Report_Generator():
                 self.parse_SQL(node.text,SQL_Command_Dict,SQL_Operators,SQL_Maths_Operators)
                 active_worksheet = excel_workbook[SQL_Command_Dict['FROM'][0]]
                 self.find_columns(active_worksheet,SQL_Command_Dict)
+                print(SQL_Command_Dict)
                 self.SQL_Logic(active_worksheet,SQL_Command_Dict,Group_By,Output_List)
-                output = self.output_string_manipulation(SQL_Command_Dict,Output_List,Group_By,html_class_arr)
+                output = self.output_string_manipulation(SQL_Command_Dict,Output_List,Group_By)
 
-                report +="\n" + '<div> ' + output  + "</div> </body>"
+                report +="\n" + "<body padding:0;margin:0;>" + output  + "</body>"
 
         report += "</html>"
         html_output = codecs.open("report.html","w","utf-8")
         html_output.write(report)
         html_output.close()
 
-        webbrowser.open_new_tab('report.html')
-
-    def Style_Class(self,node):
-
-        try:
-
-            str_Class_Name = node.find("Class_Name").text 
-            if str_Class_Name is None: str_Class_Name = '';
-            str_Applys_to = node.find("Apply_To").text
-            if str_Applys_to is None: str_Applys_to = '';
-            str_Background_Colour = node.find("Background_Colour").text
-            if str_Background_Colour is None: str_Background_Colour = '';
-            str_Text_Colour = node.find("Text_Colour").text
-            if str_Text_Colour is None: str_Text_Colour = '';
-            str_Text_Size = node.find("Text_Size").text
-            if str_Text_Size is None: str_Text_Size = '';
-            str_Text_Alignment = node.find("Text_Alignment").text
-            if str_Text_Alignment is None: str_Text_Alignment = '';
-            str_Text_Font = node.find("Text_Font").text
-            if str_Text_Font is None: str_Text_Font = '';
-
-            #str_Table_Width = node.find("Table_Width").text
-            str_Table_Border = node.find("Table_Border").text
-            if str_Table_Border is None: str_Table_Border = '';
-            str_Table_Border_Collapse = node.find("Table_Border_Collapse").text
-            if str_Table_Border_Collapse is None: str_Table_Border_Collapse = '';
-            str_Table_Border_Spacing = node.find("Table_Border_Spacing").text
-            if str_Table_Border_Spacing is None: str_Table_Border_Spacing = '';
-            str_Table_Padding = node.find("Table_Padding").text
-            if str_Table_Padding is None: str_Table_Padding = '';
-
-        except Exception as e:
-            pass
-
-        str_html_Class = ""
-        str_html_Class += "." + str_Class_Name + " {"
-        str_html_Class += "\n background: "+str_Background_Colour + ";"
-        str_html_Class += "\n color: " + str_Text_Colour + ";"
-        str_html_Class += "\n font-size: " + str_Text_Size + ";"
-        str_html_Class += "\n text-align: " + str_Text_Alignment + ";"
-        str_html_Class += "\n font-family: " + str_Text_Font + ";"
-
-        str_html_Class += "\n border: " + str_Table_Border + ";"
-        str_html_Class += "\n border-collapse: " + str_Table_Border_Collapse + ";"
-        str_html_Class += "\n border-spacing: " + str_Table_Border_Spacing + ";"
-        str_html_Class += "\n padding:" + str_Table_Padding + ";"
-        str_html_Class += "\n }"
-
-
-        return str_Class_Name, str_Applys_to, str_html_Class
-
-    def Load(self,xml_file_path,excel_file_path):
+    def Load(self):
+        my_logger.info('Program Has Started')
         #Loads the xml file. Controls the layout of the html
 
+        self.file_locations = []
+        self.tk_window()
+
         try:
-            xml_tree = xml.etree.ElementTree.parse(xml_file_path)
+            xml_tree = xml.etree.ElementTree.parse(self.file_locations[0])
             xml_root = xml_tree.getroot()
             xml_iter = xml_tree.iter()
 
             #Loads the excel file into memory
-            print("here")
-            excel_workbook = openpyxl.load_workbook(excel_file_path,data_only=True)
-            print("now here")
+            excel_workbook = openpyxl.load_workbook(self.file_locations[1],data_only=True)
         except Exception as e:
+            my_logger.error("Failed to Open File",exc_info=True)
             return;
 
         return xml_iter,excel_workbook
@@ -191,6 +131,7 @@ class Report_Generator():
         del SQL_Command_Dict['AND']
 
         if SQL_Command_Dict['MATHS']  and  not SQL_Command_Dict['GROUP BY']:
+            my_logger.info('Group by Required When Maths operators present') 
             raise NameError('Group by Required When Maths operators present') 
 
     def find_columns(self,active_worksheet,SQL_Command_Dict):
@@ -245,123 +186,46 @@ class Report_Generator():
 
         del SQL_Command_Dict['WHERE'],active_worksheet
 
-    def output_string_manipulation(self,SQL_Command_Dict,Output_List,Group_By, html_group_arr):
+    def output_string_manipulation(self,SQL_Command_Dict,Output_List,Group_By):
 
-        #Creates the variables needed for the function. 
         Output_String = ''
         self.graph_output = ""
-        str_html_class_name = ""
-
         header_list_group = []
         header_list_select = []
 
         Group_By_Output_List = []
-        Group_By_Dict = collections.OrderedDict()
+		
+        print(Group_By)
 
-
-        #This creates the group by dictionary from the group by array. Tests to see if a group by is needed.
+        #Output_List.sort(key=itemgetter(0))
         if not Group_By[0]:
             pass
         else:			
-            print('Not Sorted Group By : ', Group_By)
             Group_By.sort(key=itemgetter(0))
-            print('Sorted Group By : ', Group_By)
-            self.return_group_by(Group_By,Group_By_Dict,header_list_group,SQL_Command_Dict)
-            print(Group_By_Dict)
-            Group_By_Dict
-         
+            
+            self.return_group_by(Group_By,Group_By_Output_List,header_list_group,SQL_Command_Dict)
+            
+        Output_String += '\n <button type="button" class="btn1">Toggle the Table Below</button>'
 
-        #Output string. Writen in html. Adds a button to toggle the table below it.               
-        Output_String +=  "<div> \n <details> \n <summary> Click to reveal non grouped data </summary>"
+        Output_String += '<div class=expand1>'
 
-        #Tests for any css classes that are inculded. If it finds one that matches the correct type it will apply the class to the table otherwise output just the table.
-        for sublist in html_group_arr:
-            if 'Table' == sublist[1]:
-                Output_String += '\n <table class="' + sublist[0] + '" > \n <tr> \n '
-                str_html_class_name = sublist[0]
-                break
+        Output_String += '\n'.join(self.generate_html_table(Output_List,SQL_Command_Dict['SELECT'],header_list_select,1))
+        Output_String += '</div>'
 
-        else:
-            Output_String += '\n <table> \n <tr> \n'
-
-        #Creates the table structure for the select table
-        Output_String += '\n'.join(self.generate_html_table(Output_List,SQL_Command_Dict['SELECT'],header_list_select,1,str_html_class_name))
-        str_html_class_name = ""
-
-
-        Output_String +=  "\n </details> \n </div>"
-        
         del Output_List, header_list_select,SQL_Command_Dict['SELECT']
 
-        Output_String += '<div> \n <details> \n <summary> Click to reveal grouped data </summary>'
-            
-        #Embeded in a try incase group by doesnt exist. Creates a header list for the table from the SQL command dictionary. Takes from both the group by and maths keys.
+        Output_String += '\n <button type="button" class="btn2">Toggle the Table Below</button>'
+        Output_String += '<div class=expand2>'
         try:
-            temp_string = ''
-            header_list = []
-            graph_list = []
-            
-
-            for sublist in SQL_Command_Dict['GROUP BY']:
-                header_list.append(sublist[1])
-
-            for k in SQL_Command_Dict['MATHS']:
-                header_list.append(k)
-
-            #Tests for any css classes that are inculded. If it finds one that matches the correct type it will apply the class to the table otherwise output just the table.
-            for sublist in html_group_arr:
-                if 'Table' == sublist[1]:
-                    Output_String += '\n <table class="' + sublist[0] + '" >' 
-                    str_html_class_name = sublist[0]
-                    break
-            else:
-                Output_String += '\n <table>'
-
-
-            #Creates the html table header.
-            Output_String += '\n'.join(self.generate_group_by_table(header_list,str_html_class_name))
-            #Recursive function that generates the table from the grouped dictionary
-            temp_string, graph_list = self.get_recursive_dict(Group_By_Dict,temp_string,graph_list,0,str_html_class_name)
-            Output_String += temp_string
-            Output_String += '\n </table>'
+            Output_String += '\n'.join(self.generate_html_table(Group_By_Output_List,SQL_Command_Dict['GROUP BY'],header_list_group,2))
         except KeyError: pass		
-        Output_String += '\n </details> \n </div>'
+        Output_String += '</div>'
 
         del Group_By_Output_List,header_list_group
 
-        Output_String += '<div> \n <details> \n <summary> Click to reveal the graphs </summary>'
         Output_String += self.graph_output
-        Output_String += '\n </details> \n </div>'
 
         return  Output_String
-
-    def generate_group_by_table(self,header_list,str_html_class_name):
-        yield '\n <tr class="' + str_html_class_name +'" > \n'
-        for header in header_list:
-            yield '     <th class="'+ str_html_class_name +'">' + header + '</th>'
-        yield ' </tr> \n'
-            
-    def get_recursive_dict(self,recdict,out_string,graph_out,count=0,str_html_class_name=""):
-
-        for subkey in recdict:
-            if count == 0:
-                out_string += '<tr class="'+ str_html_class_name +'"> \n'
-            if isinstance(recdict[subkey],dict):
-                if count >0:
-                    out_string+= '</tr> \n <tr class="'+ str_html_class_name +'"> \n <td class="'+ str_html_class_name +'"></td>'
-                out_string += '<td>' + subkey +'</td>'
-                #graph_list.append(subkey)
-                out_string, graph_out = self.get_recursive_dict(recdict[subkey],out_string,graph_out,count+1,str_html_class_name)
-
-            elif isinstance(recdict[subkey],list):
-                for s in recdict[subkey]:
-                    out_string += '<td class="'+ str_html_class_name +'">' + str(s) + '</td>'
-                    graph_out.append(s)
-                out_string += '</tr>'
-
-            if count == 0:
-                out_string += '</tr> \n'
-        return out_string, graph_out
 
     def return_table_data(self,SQL_Command_Dict,active_worksheet,i,Group_By,Output_List):
 
@@ -377,24 +241,20 @@ class Report_Generator():
                 if sheet_value is None: sheet_value = ''			
                 flat_list.append(sheet_value)
         try:
-
             for group_by_sublist in SQL_Command_Dict['GROUP BY']:
-                group_by_value = active_worksheet.cell(row=i,column=group_by_sublist[-1]).value
+                group_by_value = active_worksheet.cell(row=i,column=group_by_sublist[-1]).value		
                 if type(active_worksheet.cell(row=i,column=group_by_sublist[-1]).value) is datetime:
                     pos = str([s for s in select_sublist[:-1] if '%' in s])
                     Group_By_Flat_List.append(datetime.strftime(active_worksheet.cell(row=i,column=group_by_sublist[-1]).value,pos))
                 else:
                     if group_by_value is None: group_by_value = ''				
                     Group_By_Flat_List.append(group_by_value)
-
         except KeyError:
             pass
-
         for key, dict_list in SQL_Command_Dict['MATHS'].items():
             for maths_sublist in dict_list:
                 flat_list.append('£'+ str(active_worksheet.cell(row=i,column=maths_sublist[-1]).value))
                 Group_By_Flat_List.append(active_worksheet.cell(row=i,column=maths_sublist[-1]).value)
-
 
         Group_By.append(Group_By_Flat_List)
         Output_List.append(flat_list)
@@ -564,20 +424,21 @@ class Report_Generator():
                     if sublist[0] == active_worksheet.cell(row=1,column=i).value:
                         sublist.append(i)		
                         			
-    def generate_html_table(self,Output_List,dict_arr,header_list,current_table,str_html_class_name):
+    def generate_html_table(self,Output_List,dict_arr,header_list,current_table):
 
         Output_String =""
+        yield'<table padding:0;margin:0;> \n  <tr> \n'
         for substring in dict_arr:
-            yield '   <th class="'+ str_html_class_name +'">' + str(substring[1]) + '</th>'
+            yield '   <th>' + str(substring[1]) + '</th>'
 
         for h_string in header_list:
-            yield  '   <th class="'+ str_html_class_name +'">' + str(h_string) + '</th>'
+            yield  '   <th>' + str(h_string) + '</th>'
         yield '  </tr>'
 
-        for sublist in Output_List: 
-            yield '\n  <tr class="'+ str_html_class_name +'"> \n'
+        for sublist in Output_List:
+            yield '\n  <tr> \n'
             for l_string in sublist:
-                yield'    <td class="'+ str_html_class_name +'" >'+ str(l_string) + '</td>'
+                yield'    <td >'+ str(l_string) + '</td>'
             yield '\n  </tr> \n'
 
         yield '</table>'
@@ -592,134 +453,122 @@ class Report_Generator():
                     sublist[i] = ""
         del checked_list
 
-    def return_group_by(self,Group_By,Group_Dict,header_list_group,SQL_Command_Dict):
+    def return_group_by(self,Group_By,Group_By_Output_List,header_list_group,SQL_Command_Dict):
         Grouped_Items = []
         Temp_Grouped_Items = []
+        Group_Dict = {}
 
-        group_length =  len(SQL_Command_Dict['GROUP BY'])
+        TO_GROUP_BY=[]
+        for sublist in SQL_Command_Dict['GROUP BY']:
+            TO_GROUP_BY.append(sublist[1])
 
         for sublist in Group_By:
-            self.recursive_dict(Group_Dict,0,group_length,sublist)
-
-        self.return_dict(Group_Dict,SQL_Command_Dict,header_list_group)                     
-
-    def return_dict(self,recdict,SQL_Command_Dict,header_list_group,count=0,title_list=''):
-
-        for k,v in recdict.items():
-            if isinstance(v, dict):
-                title_list += k + ': '
-
-                if k in title_list[title_list.find(':'):]:
-                    title_list = title_list.replace(title_list[: title_list.find(':')+2],'')
-                    
-                self.return_dict(v,SQL_Command_Dict,header_list_group,count+1,title_list)
+            print(Group_Dict,'This is the Group Dict')
+            if sublist[0] in Group_Dict:
+                print(sublist,'This is the sublist')
+                print(Group_Dict,'This is the Group Dict Before Update')
+                Group_Dict.update({sublist[0]: sublist[1:]})
+                print(Group_Dict,'This is after the First update')
+                self.create_nested_dict(Group_Dict,sublist[0])
+                print(Group_Dict,'This is after the update')
             else:
-                int_list = v
-                title_list += ': ' + k
+                Group_Dict[sublist[0]] = {}
+                Group_Dict[sublist[0]]=(sublist[1:])
+                print(Group_Dict,'This is before the update')
+                self.create_nested_dict(Group_Dict,sublist[0])
+                print(Group_Dict,'This is after the update')
 
-                if k in title_list[title_list.rfind(':'):]:
-                    new_string = title_list[:title_list.find(':')] + title_list[title_list.rfind(':'):]
+        print(Group_Dict)
 
-                title_list = new_string
-                maths_dict = {}
-                maths_list = []
+        for key in Group_Dict:          
+            for sub_key in Group_Dict[key]:
+                sublist = Group_Dict[key][sub_key]
+                flat_list = []
+                for math_key,sub_dict in SQL_Command_Dict['MATHS'].items():
+                    flattend_list = [item for pre_sublist in sublist for item in pre_sublist]
+                    self.return_maths(sub_dict,flattend_list,flat_list,header_list_group)
+                print(key,sub_key)
+                Group_Dict[key][sub_key] = flat_list
+
+        print('THIS IS THE GROUPED DICT \n',Group_Dict)
+
+        for y,items in itertools.groupby(Group_By,itemgetter(0)):
+            Grouped_Items.append(list(items))
+
+        Full_list = []
+        
+        count = 0
+        for g_sublist in Grouped_Items:
+            
+            title_list = []
+            flat_list = []
+            int_list = [[] for _ in range(0,len(SQL_Command_Dict['MATHS']))]
+            for i,sub_sublist in itertools.product(range(0,len(int_list)),g_sublist):
+                for value in sub_sublist:
+                    if type(value) is int or type(value) is float :
+                        int_list[i].append(value)
+                    else:
+                        if value not in flat_list:
+                            flat_list.append(value)
+                            title_list.append(value)
+            
+            for item in int_list:
                 for key,sub_dict in SQL_Command_Dict['MATHS'].items():
-                    self.return_maths(sub_dict,int_list,maths_list,header_list_group)   
-                    self.return_graph(int_list,'box',title_list)
-                    maths_dict[key] = maths_list
-                recdict[k] = maths_dict
+                    self.return_maths(sub_dict,item,flat_list,header_list_group)
+                    self.return_graph(item,'box',count,title_list)
+            count += 1
 
-    def recursive_dict(self,recdict,count,groupint,l):
-        if count == (groupint-1):
-            if l[count] not in recdict.keys():
-                recdict[l[count]]=[]
-            recdict[l[count]].append(l[count+1])
-        else:
-            if l[count] not in recdict.keys():
-                recdict[l[count]] = collections.OrderedDict()
-            self.recursive_dict(recdict[l[count]],count+1,groupint,l)
+            Group_By_Output_List.append(flat_list)
+
+        del Grouped_Items
 
     def create_nested_dict(self,Group_Dict,key):
         flat_dict = {}
+        print(Group_Dict[key],'This is the Group_Dict, key')
         for dict_list in Group_Dict[key]:
+            print(dict_list)
+            print(dict_list,'This is the dict list')
             if dict_list in flat_dict:
-                flat_dict[dict_list].update(dict_list)
+                flat_dict[dict_list].update(dict_list[1:])
             else:
                 flat_dict[dict_list] = []
-                flat_dict[dict_list].append(dict_list)
+                flat_dict[dict_list].append(dict_list[1:])
         Group_Dict[key] = flat_dict
 
-    def return_graph(self,int_list,type,title):
-        self.graph_output += '<div> <div id="graph' + title + '"></div>'
+    def return_graph(self,int_list,type,count,title):
+        self.graph_output += '<div id="graph' + str(count) + '"></div>'
         self.graph_output += '<script> var trace1 = { x:' + str(int_list) + ', \n type:"' + type + '''",\n name: "Set 1"};
-        var data = [trace1]; \n var layout = {title: " ''' +str(title) +'''"};
-        Plotly.newPlot("graph''' + title + '", data, layout) </script> \n </div>'
-
-class tk_windows ():
+        var data = [trace1]; \n var layout = {title: " ''' +str(title[0]) +'''"};
+        Plotly.newPlot("graph''' + str(count) + '", data, layout) </script> \n'
 
     def tk_window(self):
-
-        self.xml_file_path = ""
-        self.excel_file_path = ""
-        self.graph_selection_out = ""
-
         root = tk.Tk()
-
-        self.graph_selection = tk.StringVar()
-
-        frame_button = tk.Frame(root)
-        frame_radio_button = tk.Frame(root)
-
-        frame_button_xml = tk.Frame(frame_button)
-        frame_button_excel = tk.Frame(frame_button)
-
-        label_xml = tk.Label(frame_button_xml)
-        label_excel = tk.Label(frame_button_excel)
-
-        button_xml = tk.Button(frame_button_xml,text='Pick Xml File',command=lambda:  self.xml_button(label_xml))
-        button_excel = tk.Button(frame_button_excel,text='Pick Excel File',command=lambda: self.excel_button(label_excel))
-        button_close = tk.Button(root,text="Continue",command = root.destroy)
-
-        
-        radio_graph_bar = tk.Radiobutton(frame_radio_button,text="Bar Chart",variable=self.graph_selection,value="bar",command=self.rb_select)
-        radio_graph_line = tk.Radiobutton(frame_radio_button,text="Line Chart",variable=self.graph_selection,value="line",command=self.rb_select)
-        radio_graph_box = tk.Radiobutton(frame_radio_button,text="Box Plot",variable=self.graph_selection,value="box",command=self.rb_select)
-
-        button_xml.pack()
-        button_excel.pack()
-        label_xml.pack()
-        label_excel.pack()
-
-        frame_button_xml.pack()
-        frame_button_excel.pack()
-
-        radio_graph_bar.pack()
-        radio_graph_line.pack()
-        radio_graph_box.pack()
-
-        frame_button.grid(row=0, column=0)
-        frame_radio_button.grid(row=0, column=1)
-
-        #frame_button.pack()
-        #frame_radio_button.pack()
-        button_close.grid(columnspan=2)
+        button = tk.Button(root,text='Pick Xml File',command=lambda:  self.onbutton(button,button1,1,root))
+        button1 = tk.Button(root,text='Pick Excel File',command=lambda: self.onbutton(button1,button,2,root))
+        button.pack()
+        button1.config(state='disabled')
+        button1.pack()
         root.mainloop()
 
-        return self.xml_file_path,self.excel_file_path,self.graph_selection_out
+    def onbutton(self,button,button1,count,root):
+        
+        
+        button.config(state='disabled')
 
-    def xml_button(self,label_xml):
+        if count == 1 :
+            self.file_locations.append(fd.askopenfilename(filetypes=(("XML Files","*.xml"),("All Files","*."))))
+            button1.config(state='active')
+        elif count == 2:
+            self.file_locations.append(fd.askopenfilename(filetypes=(("Excel Files","*.xlsm"),("All Files","*."))))
+            root.destroy()
 
-        self.xml_file_path = fd.askopenfilename(filetypes=(("XML Files","*.xml"),("All Files","*.")))
-        label_xml.config(text=self.xml_file_path)
-    
-    def excel_button(self,label_excel):
+LOG_FILENAME = __name__
 
-        self.excel_file_path = fd.askopenfilename(filetypes=(("Excel Files","*.xlsm"),("All Files","*.")))
-        label_excel.config(text=self.excel_file_path)
+# Set up a specific logger with our desired output level
+my_logger = logging.getLogger('MyLogger')
+my_logger.setLevel(logging.DEBUG)
 
-    def rb_select(self):
-        self.graph_selection_out = self.graph_selection.get()
+
 
 if __name__ == '__main__':
     Report_Generator().Main()
-

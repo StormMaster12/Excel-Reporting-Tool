@@ -6,7 +6,20 @@ MAX (Amount)
 COUNT (Amount)
 FROM Transactions
 WHERE 1 = 1 
-AND TD BETWEEN 01/01/2015 AND 01/01/2016
-AND PA = 'WAGN Railways'
-GROUP BY CT, TD</SQL>
+AND TD BETWEEN 01/01/2015 AND 01/01/2016 M
+GROUP BY CT, PA,</SQL>
 </ROOT>
+
+<SQL>SELECT TO_CHAR(Transaction_Date,'YYYY') AS "Year", Project AS "Holiday", SUM (Amount) AS "Amount"
+FROM Transactions
+WHERE 1 = 1 
+AND Category = 'Holidaying'
+AND Project != ''
+GROUP BY TO_CHAR(Transaction_Date,'YYYY'), Project </SQL>
+<SQL>SELECT Recipient AS "Child", Project AS "Holiday", SUM (Amount) AS "Amount"
+FROM Transactions
+WHERE 1 = 1 
+AND Category = 'Holidaying'
+AND (Recipient = 'James' OR Recipient = 'Jenny')
+AND Project != ''
+GROUP BY Recipient, Project </SQL>
